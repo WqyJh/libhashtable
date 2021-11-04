@@ -57,26 +57,4 @@ struct __attribute__((__packed__)) flow_key {
 }
 #endif
 
-#include <string.h>
-
-typedef struct { char blob[16]; } key_blob;
-
-typedef struct { char blob[8]; } value_blob;
-
-#define CUCKOO_TABLE_NAME blob_blob_table
-#define CUCKOO_KEY_TYPE key_blob
-#define CUCKOO_MAPPED_TYPE value_blob
-
-namespace std {
-template <> struct hash<key_blob> {
-  size_t operator()(const key_blob &kb) const { return *(size_t *)kb.blob; }
-};
-
-template <> struct equal_to<key_blob> {
-  bool operator()(const key_blob &lhs, const key_blob &rhs) const {
-    return memcmp(lhs.blob, rhs.blob, sizeof(lhs.blob)) == 0;
-  }
-};
-}
-
 #endif // FLOW_DIRECTOR_COMMON_H

@@ -53,30 +53,18 @@ endif()
 set(CMAKE_C_FLAGS_DEBUG "$ENV{CFLAGS} -O0 -Wall -g -ggdb")
 set(CMAKE_C_FLAGS_RELEASE "$ENV{CFLAGS} -O3 -Wall")
 
-set(PUBLIC_HEADERS
-    dpdk_hash.h
-)
-
 set(LIBRARIES ${LIBRARIES} ${DPDK_LIBRARIES} xxhash pthread dl rt m numa yaml-cpp)
 
 include_directories(${PROJECT_SOURCE_DIR})
 set(SRCS
     dpdk_hash.c
+    libcuckoo_hash.cc
+    unordered_map_hash.cc
 )
 
 add_library(benchhash SHARED ${SRCS})
 set_target_properties(benchhash PROPERTIES PUBLIC_HEADER "${PUBLIC_HEADERS}")
 set_target_properties(benchhash PROPERTIES VERSION 1.0 SOVERSION 1)
-
-add_library(benchhash_static STATIC ${SRCS})
-set_target_properties(benchhash_static PROPERTIES OUTPUT_NAME "benchhash")
-set_target_properties(benchhash_static PROPERTIES PUBLIC_HEADER "${PUBLIC_HEADERS}")
-
-include(GNUInstallDirs)
-install(TARGETS benchhash benchhash_static
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
 # # -DENABLE_TESTING=ON
 # option(ENABLE_TESTING "Enable make test" ON)

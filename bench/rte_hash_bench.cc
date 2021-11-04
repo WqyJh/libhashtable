@@ -1,23 +1,9 @@
-#include <cstdint>
-#include <cstring>
-#include <memory>
-#include <functional>
-#include <pthread.h>
-#include <rte_cycles.h>
 #include <rte_hash.h>
-#include <stdlib.h> /* srand, rand */
-#include <time.h>   /* time */
-#include <chrono>
-#include <unistd.h>
 
 #include <benchmark/benchmark.h>
 
 #include <rte_errno.h>
 #include <rte_lcore.h>
-
-#include <libcuckoo/cuckoohash_map.hh>
-#include <unordered_map>
-#include <dpdk_hash.h>
 
 #include "common.h"
 
