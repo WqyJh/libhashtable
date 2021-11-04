@@ -149,5 +149,5 @@ static void BM_rte_hash_del(benchmark::State &state) {
 }
 
 BENCHMARK(BM_rte_hash_add);
-BENCHMARK(BM_rte_hash_lookup);
 BENCHMARK(BM_rte_hash_del);
+BENCHMARK(BM_rte_hash_lookup);
