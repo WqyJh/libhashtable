@@ -40,10 +40,10 @@ endif()
 
 add_definitions(-DENABLE_XXH3_64bits)
 
-option(DPDK_HASH_ALWAYS_INLINE "Enable always inline" ON)
-if (DPDK_HASH_ALWAYS_INLINE)
-    message(STATUS "DPDK_HASH_ALWAYS_INLINE enabled")
-    add_definitions(-DDPDK_HASH_ALWAYS_INLINE)
+option(BENCH_ALWAYS_INLINE "Enable always inline" ON)
+if (BENCH_ALWAYS_INLINE)
+    message(STATUS "BENCH_ALWAYS_INLINE enabled")
+    add_definitions(-DBENCH_ALWAYS_INLINE)
 endif()
 
 if (NOT CMAKE_BUILD_TYPE)

@@ -10,7 +10,10 @@ set(CMAKE_BUILD_TYPE "Debug")
 
 add_executable(bench_main
     main.cc
-    hash_table_bench.cc
+    rte_hash_bench.cc
+    dpdk_hash_bench.cc
+    libcuckoo_hash_bench.cc
+    unordered_map_bench.cc
 )
 
 target_link_libraries(bench_main
