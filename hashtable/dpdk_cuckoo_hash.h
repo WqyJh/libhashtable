@@ -229,7 +229,6 @@ struct dpdk_hash {
 
 	uint32_t key_len __rte_cache_aligned;
 	/**< Length of hash key. */
-	uint8_t ext_table_support;     /**< Enable extendable bucket table */
 	uint8_t writer_takes_lock;
 	/**< Indicates if the writer threads need to take lock */
 	dpdk_hash_function hash_func;    /**< Function used to calculate hash. */
@@ -249,15 +248,6 @@ struct dpdk_hash {
 	/**< Table with buckets storing all the	hash values and key indexes
 	 * to the key table.
 	 */
-	struct dpdk_hash_bucket *buckets_ext; /**< Extra buckets array */
-	struct rte_ring *free_ext_bkts; /**< Ring of indexes of free buckets */
-	/* Stores index of an empty ext bkt to be recycled on calling
-	 * dpdk_hash_del_xxx APIs. When lock free read-write concurrency is
-	 * enabled, an empty ext bkt cannot be put into free list immediately
-	 * (as readers might be using it still). Hence freeing of the ext bkt
-	 * is piggy-backed to freeing of the key index.
-	 */
-	uint32_t *ext_bkt_to_free;
 	uint32_t *tbl_chng_cnt;
 	/**< Indicates if the hash table changed from last read. */
 } __rte_cache_aligned;

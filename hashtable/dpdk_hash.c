@@ -26,6 +26,7 @@
 
 #include "dpdk.h"
 #include "dpdk_cuckoo_hash.h"
+#include "fixed_stack.h"
 
 /* Mask of all flags supported by this version */
 #define DPDK_HASH_EXTRA_FLAGS_MASK ( \
@@ -89,21 +90,23 @@ get_alt_bucket_index(const struct dpdk_hash *h,
 	return (cur_bkt_idx ^ sig) & h->bucket_bitmask;
 }
 
+static inline struct fixed_stack *dpdk_hash_create_fixed_stack(char *name, unsigned int capacity, int socket_id) {
+    unsigned int mem_size = fixed_stack_get_memsize(capacity);
+    struct fixed_stack *s = (struct fixed_stack *)rte_zmalloc_socket(name, mem_size,
+					RTE_CACHE_LINE_SIZE, socket_id);
+    return s;
+}
+
 struct dpdk_hash *
 dpdk_hash_create(const struct dpdk_hash_parameters *params)
 {
 	struct dpdk_hash *h = NULL;
 	struct rte_ring *r = NULL;
-	struct rte_ring *r_ext = NULL;
 	char hash_name[DPDK_HASH_NAMESIZE];
 	void *k = NULL;
 	void *buckets = NULL;
-	void *buckets_ext = NULL;
 	char ring_name[RTE_RING_NAMESIZE];
-	char ext_ring_name[RTE_RING_NAMESIZE];
 	unsigned num_key_slots;
-	unsigned int ext_table_support = 0;
-	uint32_t *ext_bkt_to_free = NULL;
 	uint32_t *tbl_chng_cnt = NULL;
 	uint32_t i;
 
@@ -129,10 +132,6 @@ dpdk_hash_create(const struct dpdk_hash_parameters *params)
 		return NULL;
 	}
 
-
-	if (params->extra_flag & DPDK_HASH_EXTRA_FLAGS_EXT_TABLE)
-		ext_table_support = 1;
-
 	num_key_slots = params->entries + 1;
 
 	snprintf(ring_name, sizeof(ring_name), "HT_%s", params->name);
@@ -146,21 +145,6 @@ dpdk_hash_create(const struct dpdk_hash_parameters *params)
 
 	const uint32_t num_buckets = rte_align32pow2(params->entries) /
 						DPDK_HASH_BUCKET_ENTRIES;
-
-	/* Create ring for extendable buckets. */
-	if (ext_table_support) {
-		snprintf(ext_ring_name, sizeof(ext_ring_name), "HT_EXT_%s",
-								params->name);
-		r_ext = rte_ring_create_elem(ext_ring_name, sizeof(uint32_t),
-				rte_align32pow2(num_buckets + 1),
-				params->socket_id, 0);
-
-		if (r_ext == NULL) {
-			RTE_LOG(ERR, HASH, "ext buckets memory allocation "
-								"failed\n");
-			goto err;
-		}
-	}
 
 	snprintf(hash_name, sizeof(hash_name), "HT_%s", params->name);
 
@@ -179,25 +163,6 @@ dpdk_hash_create(const struct dpdk_hash_parameters *params)
 	if (buckets == NULL) {
 		RTE_LOG(ERR, HASH, "buckets memory allocation failed\n");
 		goto err_unlock;
-	}
-
-	/* Allocate same number of extendable buckets */
-	if (ext_table_support) {
-		buckets_ext = rte_zmalloc_socket(NULL,
-				num_buckets * sizeof(struct dpdk_hash_bucket),
-				RTE_CACHE_LINE_SIZE, params->socket_id);
-		if (buckets_ext == NULL) {
-			RTE_LOG(ERR, HASH, "ext buckets memory allocation "
-							"failed\n");
-			goto err_unlock;
-		}
-		/* Populate ext bkt ring. We reserve 0 similar to the
-		 * key-data slot, just in case in future we want to
-		 * use bucket index for the linked list and 0 means NULL
-		 * for next bucket
-		 */
-		for (i = 1; i <= num_buckets; i++)
-			rte_ring_sp_enqueue_elem(r_ext, &i, sizeof(uint32_t));
 	}
 
 	const uint32_t key_entry_size =
@@ -277,16 +242,12 @@ dpdk_hash_create(const struct dpdk_hash_parameters *params)
 	h->num_buckets = num_buckets;
 	h->bucket_bitmask = h->num_buckets - 1;
 	h->buckets = buckets;
-	h->buckets_ext = buckets_ext;
-	h->free_ext_bkts = r_ext;
 	h->hash_func = (params->hash_func == NULL) ?
 		default_hash_func : params->hash_func;
 	h->key_store = k;
 	h->free_slots = r;
-	h->ext_bkt_to_free = ext_bkt_to_free;
 	h->tbl_chng_cnt = tbl_chng_cnt;
 	*h->tbl_chng_cnt = 0;
-	h->ext_table_support = ext_table_support;
 
 #if defined(RTE_ARCH_X86)
 	if (rte_cpu_get_flag_enabled(RTE_CPUFLAG_SSE2))
@@ -307,13 +268,10 @@ dpdk_hash_create(const struct dpdk_hash_parameters *params)
 err_unlock:
 err:
 	rte_ring_free(r);
-	rte_ring_free(r_ext);
 	rte_free(h);
 	rte_free(buckets);
-	rte_free(buckets_ext);
 	rte_free(k);
 	rte_free(tbl_chng_cnt);
-	rte_free(ext_bkt_to_free);
 	return NULL;
 }
 
@@ -324,12 +282,9 @@ dpdk_hash_free(struct dpdk_hash *h)
 		return;
 
 	rte_ring_free(h->free_slots);
-	rte_ring_free(h->free_ext_bkts);
 	rte_free(h->key_store);
 	rte_free(h->buckets);
-	rte_free(h->buckets_ext);
 	rte_free(h->tbl_chng_cnt);
-	rte_free(h->ext_bkt_to_free);
 	rte_free(h);
 }
 
@@ -376,24 +331,10 @@ dpdk_hash_reset(struct dpdk_hash *h)
 	/* reset the free ring */
 	rte_ring_reset(h->free_slots);
 
-	/* flush free extendable bucket ring and memory */
-	if (h->ext_table_support) {
-		memset(h->buckets_ext, 0, h->num_buckets *
-						sizeof(struct dpdk_hash_bucket));
-		rte_ring_reset(h->free_ext_bkts);
-	}
-
     tot_ring_cnt = h->entries;
 
 	for (i = 1; i < tot_ring_cnt + 1; i++)
 		rte_ring_sp_enqueue_elem(h->free_slots, &i, sizeof(uint32_t));
-
-	/* Repopulate the free ext bkt ring. */
-	if (h->ext_table_support) {
-		for (i = 1; i <= h->num_buckets; i++)
-			rte_ring_sp_enqueue_elem(h->free_ext_bkts, &i,
-							sizeof(uint32_t));
-	}
 }
 
 /*
@@ -674,12 +615,10 @@ __dpdk_hash_add_key_with_hash(const struct dpdk_hash *h, const void *key,
 	uint32_t prim_bucket_idx, sec_bucket_idx;
 	struct dpdk_hash_bucket *prim_bkt, *sec_bkt, *cur_bkt;
 	struct dpdk_hash_key *new_k, *keys = h->key_store;
-	uint32_t ext_bkt_id = 0;
 	uint32_t slot_id;
 	int ret;
 	unsigned int i;
 	int32_t ret_val;
-	struct dpdk_hash_bucket *last;
 
 	short_sig = get_short_sig(sig);
 	prim_bucket_idx = get_prim_bucket_index(h, sig);
@@ -753,15 +692,6 @@ __dpdk_hash_add_key_with_hash(const struct dpdk_hash *h, const void *key,
 		return ret_val;
 	}
 
-	/* if ext table not enabled, we failed the insertion */
-	if (!h->ext_table_support) {
-		enqueue_slot_back(h, slot_id);
-		return ret;
-	}
-
-	/* Now we need to go through the extendable bucket. Protection is needed
-	 * to protect all extendable bucket processes.
-	 */
 	/* We check for duplicates again since could be inserted before the lock */
 	ret = search_and_update(h, data, key, prim_bkt, short_sig);
 	if (ret != -1) {
@@ -797,32 +727,8 @@ __dpdk_hash_add_key_with_hash(const struct dpdk_hash *h, const void *key,
 		}
 	}
 
-	/* Failed to get an empty entry from extendable buckets. Link a new
-	 * extendable bucket. We first get a free bucket from ring.
-	 */
-	if (rte_ring_sc_dequeue_elem(h->free_ext_bkts, &ext_bkt_id,
-						sizeof(uint32_t)) != 0 ||
-					ext_bkt_id == 0) {
-		if (ext_bkt_id == 0) {
-			ret = -ENOSPC;
-			goto failure;
-		}
-	}
-
-	/* Use the first location of the new bucket */
-	(h->buckets_ext[ext_bkt_id - 1]).sig_current[0] = short_sig;
-	/* Store to signature and key should not leak after
-	 * the store to key_idx. i.e. key_idx is the guard variable
-	 * for signature and key.
-	 */
-     (h->buckets_ext[ext_bkt_id - 1]).key_idx[0] = slot_id;
-	// __atomic_store_n(&(h->buckets_ext[ext_bkt_id - 1]).key_idx[0],
-	// 		 slot_id,
-	// 		 __ATOMIC_RELEASE);
-	/* Link the new bucket to sec bucket linked list */
-	last = dpdk_hash_get_last_bkt(sec_bkt);
-	last->next = &h->buckets_ext[ext_bkt_id - 1];
-	return slot_id - 1;
+    ret = -ENOSPC;
+	goto failure;
 
 failure:
 	return ret;
@@ -1078,7 +984,6 @@ __dpdk_hash_del_key_with_hash(const struct dpdk_hash *h, const void *key,
 	int pos;
 	int32_t ret, i;
 	uint16_t short_sig;
-	uint32_t index = EMPTY_SLOT;
 
 	short_sig = get_short_sig(sig);
 	prim_bucket_idx = get_prim_bucket_index(h, sig);
@@ -1126,13 +1031,6 @@ return_bkt:
 	/* found empty bucket and recycle */
 	if (i == DPDK_HASH_BUCKET_ENTRIES) {
 		prev_bkt->next = NULL;
-		index = last_bkt - h->buckets_ext + 1;
-		/* Recycle the empty bkt if
-		 * no_free_on_del is disabled.
-		 */
-
-        rte_ring_sp_enqueue_elem(h->free_ext_bkts, &index,
-                        sizeof(uint32_t));
 	}
 
 return_key:
@@ -1256,10 +1154,8 @@ __bulk_lookup_l(const struct dpdk_hash *h, const void **keys,
 {
 	uint64_t hits = 0;
 	int32_t i;
-	int32_t ret;
 	uint32_t prim_hitmask[DPDK_HASH_LOOKUP_BULK_MAX] = {0};
 	uint32_t sec_hitmask[DPDK_HASH_LOOKUP_BULK_MAX] = {0};
-	struct dpdk_hash_bucket *cur_bkt, *next_bkt;
 
 	/* Compare signatures and prefetch key slot of first hit */
 	for (i = 0; i < num_keys; i++) {
@@ -1358,35 +1254,8 @@ next_key:
 		continue;
 	}
 
-	/* all found, do not need to go through ext bkt */
-	if ((hits == ((1ULL << num_keys) - 1)) || !h->ext_table_support) {
-		if (hit_mask != NULL)
-			*hit_mask = hits;
-		return;
-	}
-
-	/* need to check ext buckets for match */
-	for (i = 0; i < num_keys; i++) {
-		if ((hits & (1ULL << i)) != 0)
-			continue;
-		next_bkt = secondary_bkt[i]->next;
-		FOR_EACH_BUCKET(cur_bkt, next_bkt) {
-			if (data != NULL)
-				ret = search_one_bucket_l(h, keys[i],
-						sig[i], &data[i], cur_bkt);
-			else
-				ret = search_one_bucket_l(h, keys[i],
-						sig[i], NULL, cur_bkt);
-			if (ret != -1) {
-				positions[i] = ret;
-				hits |= 1ULL << i;
-				break;
-			}
-		}
-	}
-
-	if (hit_mask != NULL)
-		*hit_mask = hits;
+    if (hit_mask != NULL)
+        *hit_mask = hits;
 }
 
 #define PREFETCH_OFFSET 4
@@ -1585,7 +1454,6 @@ dpdk_hash_iterate(const struct dpdk_hash *h, const void **key, void **data, uint
 
 	const uint32_t total_entries_main = h->num_buckets *
 							DPDK_HASH_BUCKET_ENTRIES;
-	const uint32_t total_entries = total_entries_main << 1;
 
 	/* Out of bounds of all buckets (both main table and ext table) */
 	if (*next >= total_entries_main)
@@ -1621,27 +1489,5 @@ dpdk_hash_iterate(const struct dpdk_hash *h, const void **key, void **data, uint
 /* Begin to iterate extendable buckets */
 extend_table:
 	/* Out of total bound or if ext bucket feature is not enabled */
-	if (*next >= total_entries || !h->ext_table_support)
-		return -ENOENT;
-
-	bucket_idx = (*next - total_entries_main) / DPDK_HASH_BUCKET_ENTRIES;
-	idx = (*next - total_entries_main) % DPDK_HASH_BUCKET_ENTRIES;
-
-	while ((position = h->buckets_ext[bucket_idx].key_idx[idx]) == EMPTY_SLOT) {
-		(*next)++;
-		if (*next == total_entries)
-			return -ENOENT;
-		bucket_idx = (*next - total_entries_main) /
-						DPDK_HASH_BUCKET_ENTRIES;
-		idx = (*next - total_entries_main) % DPDK_HASH_BUCKET_ENTRIES;
-	}
-	next_key = (struct dpdk_hash_key *) ((char *)h->key_store +
-				position * h->key_entry_size);
-	/* Return key and data */
-	*key = next_key->key;
-	*data = next_key->pdata;
-
-	/* Increment iterator */
-	(*next)++;
-	return position - 1;
+    return -ENOENT;
 }
