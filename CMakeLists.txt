@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 2.8)
 
-project(benchhash)
+project(hashtable)
 
 #add_definitions(-std=c++17)
 
@@ -53,18 +53,34 @@ endif()
 set(CMAKE_C_FLAGS_DEBUG "$ENV{CFLAGS} -O0 -Wall -g -ggdb")
 set(CMAKE_C_FLAGS_RELEASE "$ENV{CFLAGS} -O3 -Wall")
 
+set(PUBLIC_HEADERS
+    hashtable/dpdk.h
+    hashtable/libcuckoo.h
+    hashtable/unordered_map.h
+)
+
 set(LIBRARIES ${LIBRARIES} ${DPDK_LIBRARIES} xxhash pthread dl rt m numa yaml-cpp)
 
 include_directories(${PROJECT_SOURCE_DIR})
 set(SRCS
-    dpdk_hash.c
-    libcuckoo_hash.cc
-    unordered_map_hash.cc
+    hashtable/dpdk_hash.c
+    hashtable/libcuckoo_hash.cc
+    hashtable/unordered_map_hash.cc
 )
 
-add_library(benchhash SHARED ${SRCS})
-set_target_properties(benchhash PROPERTIES PUBLIC_HEADER "${PUBLIC_HEADERS}")
-set_target_properties(benchhash PROPERTIES VERSION 1.0 SOVERSION 1)
+add_library(hashtable SHARED ${SRCS})
+set_target_properties(hashtable PROPERTIES PUBLIC_HEADER "${PUBLIC_HEADERS}")
+set_target_properties(hashtable PROPERTIES VERSION 1.0 SOVERSION 1)
+
+add_library(hashtable_static STATIC ${SRCS})
+set_target_properties(hashtable_static PROPERTIES OUTPUT_NAME "hashtable")
+set_target_properties(hashtable_static PROPERTIES PUBLIC_HEADER "${PUBLIC_HEADERS}")
+
+include(GNUInstallDirs)
+install(TARGETS hashtable hashtable_static
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/hashtable)
 
 # # -DENABLE_TESTING=ON
 # option(ENABLE_TESTING "Enable make test" ON)

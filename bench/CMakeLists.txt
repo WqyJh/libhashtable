@@ -19,7 +19,7 @@ add_executable(bench_main
 target_link_libraries(bench_main
     benchmark
     benchmark_main
-    benchhash
+    hashtable
     ${LIBRARIES}
 )
 

@@ -24,8 +24,8 @@
 #include <rte_compat.h>
 #include <rte_vect.h>
 
-#include <dpdk_hash.h>
-#include <dpdk_cuckoo_hash.h>
+#include "dpdk.h"
+#include "dpdk_cuckoo_hash.h"
 
 /* Mask of all flags supported by this version */
 #define DPDK_HASH_EXTRA_FLAGS_MASK ( \

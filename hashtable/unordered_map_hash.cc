@@ -7,8 +7,7 @@
 #include <unordered_map>
 
 
-#include <unordered_map_hash.h>
-
+#include "unordered_map.h"
 
 typedef struct { char blob[16]; } key_blob;
 

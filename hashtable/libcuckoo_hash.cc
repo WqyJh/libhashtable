@@ -4,7 +4,7 @@
 
 #include <libcuckoo/cuckoohash_map.hh>
 
-#include <libcuckoo_hash.h>
+#include "libcuckoo.h"
 
 
 typedef struct { char blob[16]; } key_blob;
