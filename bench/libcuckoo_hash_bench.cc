@@ -5,7 +5,7 @@
 
 #include "common.h"
 
-#include <hashtable/libcuckoo.h>
+#include "hashtable/libcuckoo.h"
 
 static void BM_libcuckoo_add(benchmark::State &state) {
     struct cuckoo_hash *tbl = cuckoo_hash_create(MAX_ENTRIES);

@@ -6,6 +6,7 @@
 #include <rte_lcore.h>
 
 #include "common.h"
+#include "hashtable/common.h"
 
 static void BM_rte_hash_add(benchmark::State &state) {
     char hash_name[HASH_NAME_LEN];

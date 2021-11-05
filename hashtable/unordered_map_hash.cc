@@ -6,20 +6,17 @@
 #include <functional>
 #include <unordered_map>
 
-
+#include "common.h"
 #include "unordered_map.h"
 
 typedef struct { char blob[16]; } key_blob;
 
-typedef uintptr_t value_blob;
-
-#define CUCKOO_TABLE_NAME blob_blob_table
-#define CUCKOO_KEY_TYPE key_blob
-#define CUCKOO_MAPPED_TYPE value_blob
-
+typedef uint64_t value_blob;
 namespace std {
 template <> struct hash<key_blob> {
-  size_t operator()(const key_blob &kb) const { return *(size_t *)kb.blob; }
+  size_t operator()(const key_blob &kb) const { 
+      return FLOW_HASH_FUNC(kb.blob, sizeof(key_blob), 0);
+    }
 };
 
 template <> struct equal_to<key_blob> {
@@ -52,7 +49,7 @@ void unordered_map_hash_free(struct unordered_map_hash *h) {
 }
 
 bool unordered_map_hash_insert(struct unordered_map_hash *h, const void *key, void *data) {
-    auto ret = h->tbl.insert(std::pair<key_blob, value_blob>(*(key_blob*)key, static_cast<value_blob>((uintptr_t)data)));
+    auto ret = h->tbl.insert(std::pair<key_blob, value_blob>(*(key_blob*)key, static_cast<value_blob>((uint64_t)data)));
     return ret.second;
 }
 
@@ -64,7 +61,7 @@ bool unordered_map_hash_erase(struct unordered_map_hash *h, const void *key) {
 bool unordered_map_hash_find(struct unordered_map_hash *h, const void *key, void **data) {
     auto ret = h->tbl.find(*(key_blob*)key);
     if (ret == h->tbl.end()) return false;
-    *(uintptr_t*)data = ret->second;
+    *(uint64_t*)data = ret->second;
     return true;
 }
 

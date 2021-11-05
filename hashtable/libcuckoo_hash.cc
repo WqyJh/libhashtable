@@ -5,7 +5,7 @@
 #include <libcuckoo/cuckoohash_map.hh>
 
 #include "libcuckoo.h"
-
+#include "common.h"
 
 typedef struct { char blob[16]; } key_blob;
 
@@ -17,7 +17,9 @@ typedef struct { char blob[8]; } value_blob;
 
 namespace std {
 template <> struct hash<key_blob> {
-  size_t operator()(const key_blob &kb) const { return *(size_t *)kb.blob; }
+  size_t operator()(const key_blob &kb) const { 
+      return FLOW_HASH_FUNC(kb.blob, sizeof(key_blob), 0);
+    }
 };
 
 template <> struct equal_to<key_blob> {

@@ -3,7 +3,7 @@
 
 #include <rte_lcore.h>
 
-#include <hashtable/fsring_inline.h>
+#include "hashtable/fsring_inline.h"
 #include "common.h"
 
 static void BM_inline_fsring_enqueue(benchmark::State &state) {

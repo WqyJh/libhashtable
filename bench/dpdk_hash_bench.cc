@@ -5,7 +5,8 @@
 #include <rte_errno.h>
 #include <rte_lcore.h>
 
-#include <hashtable/dpdk.h>
+#include "hashtable/dpdk.h"
+#include "hashtable/common.h"
 
 #include "common.h"
 
