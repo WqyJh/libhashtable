@@ -10,6 +10,8 @@ set(CMAKE_BUILD_TYPE "Debug")
 
 add_executable(bench_main
     main.cc
+    fsring_bench.cc
+    fsring_inline_bench.cc
     rte_hash_bench.cc
     dpdk_hash_bench.cc
     libcuckoo_hash_bench.cc

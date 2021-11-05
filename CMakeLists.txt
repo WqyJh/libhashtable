@@ -63,6 +63,7 @@ set(LIBRARIES ${LIBRARIES} ${DPDK_LIBRARIES} xxhash pthread dl rt m numa yaml-cp
 
 include_directories(${PROJECT_SOURCE_DIR})
 set(SRCS
+    hashtable/fsring.c
     hashtable/dpdk_hash.c
     hashtable/libcuckoo_hash.cc
     hashtable/unordered_map_hash.cc

@@ -37,7 +37,7 @@ static bench_always_inline uint32_t xxh_hash(const void *data,
 #endif
 
 #define ITERATIONS 50000000
-#define MAX_ENTRIES 1000000
+#define MAX_ENTRIES 100
 #define LOAD_FACTOR 0.7
 
 #define EXPECT_TRUE(v1) assert(v1)

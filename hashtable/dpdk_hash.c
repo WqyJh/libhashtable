@@ -20,13 +20,12 @@
 #include <rte_errno.h>
 #include <rte_string_fns.h>
 #include <rte_cpuflags.h>
-#include <rte_ring_elem.h>
 #include <rte_compat.h>
 #include <rte_vect.h>
 
 #include "dpdk.h"
 #include "dpdk_cuckoo_hash.h"
-#include "fixed_stack.h"
+#include "hashtable/fsring.h"
 
 /* Mask of all flags supported by this version */
 #define DPDK_HASH_EXTRA_FLAGS_MASK ( \
@@ -90,22 +89,17 @@ get_alt_bucket_index(const struct dpdk_hash *h,
 	return (cur_bkt_idx ^ sig) & h->bucket_bitmask;
 }
 
-static inline struct fixed_stack *dpdk_hash_create_fixed_stack(char *name, unsigned int capacity, int socket_id) {
-    unsigned int mem_size = fixed_stack_get_memsize(capacity);
-    struct fixed_stack *s = (struct fixed_stack *)rte_zmalloc_socket(name, mem_size,
-					RTE_CACHE_LINE_SIZE, socket_id);
-    return s;
-}
-
 struct dpdk_hash *
 dpdk_hash_create(const struct dpdk_hash_parameters *params)
 {
 	struct dpdk_hash *h = NULL;
-	struct rte_ring *r = NULL;
+	struct fsring *r = NULL;
 	char hash_name[DPDK_HASH_NAMESIZE];
 	void *k = NULL;
 	void *buckets = NULL;
-	char ring_name[RTE_RING_NAMESIZE];
+#define STACK_NAMESIZE 64
+	char ring_name[STACK_NAMESIZE];
+#undef STACK_NAMESIZE
 	unsigned num_key_slots;
 	uint32_t *tbl_chng_cnt = NULL;
 	uint32_t i;
@@ -136,8 +130,7 @@ dpdk_hash_create(const struct dpdk_hash_parameters *params)
 
 	snprintf(ring_name, sizeof(ring_name), "HT_%s", params->name);
 	/* Create ring (Dummy slot index is not enqueued) */
-	r = rte_ring_create_elem(ring_name, sizeof(uint32_t),
-			rte_align32pow2(num_key_slots), params->socket_id, 0);
+    r = fsring_create(rte_align32pow2(num_key_slots), params->socket_id);
 	if (r == NULL) {
 		RTE_LOG(ERR, HASH, "memory allocation failed\n");
 		goto err;
@@ -262,12 +255,12 @@ dpdk_hash_create(const struct dpdk_hash_parameters *params)
 
 	/* Populate free slots ring. Entry zero is reserved for key misses. */
 	for (i = 1; i < num_key_slots; i++)
-		rte_ring_sp_enqueue_elem(r, &i, sizeof(uint32_t));
+        fsring_enqueue(r, i);
 
 	return h;
 err_unlock:
 err:
-	rte_ring_free(r);
+	fsring_free(r);
 	rte_free(h);
 	rte_free(buckets);
 	rte_free(k);
@@ -281,7 +274,7 @@ dpdk_hash_free(struct dpdk_hash *h)
 	if (h == NULL)
 		return;
 
-	rte_ring_free(h->free_slots);
+	fsring_free(h->free_slots);
 	rte_free(h->key_store);
 	rte_free(h->buckets);
 	rte_free(h->tbl_chng_cnt);
@@ -312,7 +305,8 @@ dpdk_hash_count(const struct dpdk_hash *h)
 		return -EINVAL;
 
     tot_ring_cnt = h->entries;
-    ret = tot_ring_cnt - rte_ring_count(h->free_slots);
+
+    ret = tot_ring_cnt - fsring_count(h->free_slots);
 	return ret;
 }
 
@@ -329,12 +323,12 @@ dpdk_hash_reset(struct dpdk_hash *h)
 	*h->tbl_chng_cnt = 0;
 
 	/* reset the free ring */
-	rte_ring_reset(h->free_slots);
+    fsring_reset(h->free_slots);
 
     tot_ring_cnt = h->entries;
 
 	for (i = 1; i < tot_ring_cnt + 1; i++)
-		rte_ring_sp_enqueue_elem(h->free_slots, &i, sizeof(uint32_t));
+        fsring_enqueue(h->free_slots, i);
 }
 
 /*
@@ -346,9 +340,7 @@ static inline void
 enqueue_slot_back(const struct dpdk_hash *h,
 		uint32_t slot_id)
 {
-
-    rte_ring_sp_enqueue_elem(h->free_slots, &slot_id,
-                    sizeof(uint32_t));
+    fsring_enqueue(h->free_slots, slot_id);
 }
 
 /* Search a key from bucket and update its data.
@@ -599,9 +591,8 @@ static inline uint32_t
 alloc_slot(const struct dpdk_hash *h)
 {
 	uint32_t slot_id;
-
-    if (rte_ring_sc_dequeue_elem(h->free_slots, &slot_id,
-                    sizeof(uint32_t)) != 0)
+    
+    if (fsring_dequeue(h->free_slots, &slot_id) != 0)
         return EMPTY_SLOT;
 
     return slot_id;

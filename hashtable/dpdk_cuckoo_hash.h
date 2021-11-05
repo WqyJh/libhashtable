@@ -216,13 +216,15 @@ struct dpdk_hash_bucket {
 	void *next;
 } __rte_cache_aligned;
 
+#include "fsring.h"
+
 /** A hash table structure. */
 struct dpdk_hash {
 	char name[DPDK_HASH_NAMESIZE];   /**< Name of the hash. */
 	uint32_t entries;               /**< Total table entries. */
 	uint32_t num_buckets;           /**< Number of buckets in table. */
 
-	struct rte_ring *free_slots;
+	struct fsring *free_slots;
 	/**< Ring that stores all indexes of the free slots in the key table */
 
 	/* Fields used in lookup */
