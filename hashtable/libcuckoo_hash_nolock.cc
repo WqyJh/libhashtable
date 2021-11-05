@@ -66,7 +66,6 @@ class cuckoo_hash_nolock {
                                   std::equal_to<key_blob>>;
     map_type map_;
     std::vector<map_type::locked_table> holder_;
-    // map_type::locked_table tbl_;
 };
 
 #ifdef __cplusplus
