@@ -66,6 +66,7 @@ set(SRCS
     hashtable/fsring.c
     hashtable/dpdk_hash.c
     hashtable/libcuckoo_hash.cc
+    hashtable/libcuckoo_hash_nolock.cc
     hashtable/unordered_map_hash.cc
 )
 
