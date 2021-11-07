@@ -210,11 +210,15 @@ enum dpdk_hash_sig_compare_function {
 struct dpdk_hash_bucket {
 	uint16_t sig_current[DPDK_HASH_BUCKET_ENTRIES];
 
-	uint8_t expire_time[DPDK_HASH_BUCKET_ENTRIES];
+	// uint8_t expire_time[DPDK_HASH_BUCKET_ENTRIES];
 
-    uint32_t bloom_filter;
+#ifdef ENABLE_BLOOM_FILTER
+    uint64_t bloom_filter;
 
     uint32_t moved_counter;
+
+    uint32_t reserved;
+#endif //ENABLE_BLOOM_FILTER
 
 	uint32_t key_idx[DPDK_HASH_BUCKET_ENTRIES];
 } __rte_cache_aligned;

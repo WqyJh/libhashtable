@@ -8,6 +8,7 @@ project(hashtable)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 add_definitions(-march=native)
+# add_definitions(-DENABLE_BLOOM_FILTER)
 
 if (NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release")
@@ -81,13 +82,13 @@ install(TARGETS hashtable hashtable_static
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/hashtable)
 
-# # -DENABLE_TESTING=ON
-# option(ENABLE_TESTING "Enable make test" ON)
-# if (ENABLE_TESTING)
-#     # apt install libgtest-dev
-#     enable_testing()
-#     add_subdirectory(tests)
-# endif()
+# -DENABLE_TESTING=ON
+option(ENABLE_TESTING "Enable make test" ON)
+if (ENABLE_TESTING)
+    # apt install libgtest-dev
+    enable_testing()
+    add_subdirectory(tests)
+endif()
 
 # -DENABLE_BENCH=ON
 option(ENABLE_BENCH "Enable make bench" ON)

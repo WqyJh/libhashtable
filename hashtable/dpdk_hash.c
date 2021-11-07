@@ -25,7 +25,11 @@
 
 #include "dpdk.h"
 #include "dpdk_cuckoo_hash.h"
-#include "hashtable/fsring.h"
+#include "fsring.h"
+
+#ifdef ENABLE_BLOOM_FILTER
+#include "bloom_filter.h"
+#endif // ENABLE_BLOOM_FILTER
 
 /* Mask of all flags supported by this version */
 #define DPDK_HASH_EXTRA_FLAGS_MASK ( \
@@ -75,6 +79,32 @@ get_alt_bucket_index(const struct dpdk_hash *h,
 {
 	return (cur_bkt_idx ^ sig) & h->bucket_bitmask;
 }
+
+#ifdef ENABLE_BLOOM_FILTER
+
+#define get_bloom_hash1(h, bkt_idx) (bkt_idx & h->bucket_bitmask)
+
+#define get_bloom_hash2(h, bkt_idx) ((bkt_idx | (bkt_idx << 16)) & h->bucket_bitmask)
+
+#define bucket_bloom_set(h, prim_bkt, sec_bkt_idx) { \
+    bloom_set64(prim_bkt->bloom_filter, get_bloom_hash1(h, sec_bkt_idx), get_bloom_hash2(h, sec_bkt_idx)); \
+    ++prim_bkt->moved_counter; \
+}
+
+#define bucket_bloom_reset(h, prim_bkt, sec_bkt_idx) { \
+    bloom_reset64(prim_bkt->bloom_filter); \
+    prim_bkt->moved_counter = 0; \
+}
+
+#define bucket_bloom_delete(h, prim_bkt) { \
+    if (prim_bkt->moved_counter > 0 && --prim_bkt->moved_counter == 0) { \
+        bloom_reset64(prim_bkt->bloom_filter); \
+    } \
+}
+
+#define bucket_bloom_test(h, prim_bkt, sec_bkt_idx) bloom_test64(prim_bkt->bloom_filter, get_bloom_hash1(h, sec_bkt_idx), get_bloom_hash2(h, sec_bkt_idx))
+
+#endif // ENABLE_BLOOM_FILTER
 
 struct dpdk_hash *
 dpdk_hash_create(const struct dpdk_hash_parameters *params)
@@ -358,9 +388,8 @@ search_and_update(const struct dpdk_hash *h, void *data, const void *key,
  * empty entry.
  */
 static inline int32_t
-dpdk_hash_cuckoo_insert_mw(const struct dpdk_hash *h,
+dpdk_hash_cuckoo_insert_primary(const struct dpdk_hash *h,
 		struct dpdk_hash_bucket *prim_bkt,
-		struct dpdk_hash_bucket *sec_bkt,
 		const struct dpdk_hash_key *key, void *data,
 		uint16_t sig, uint32_t new_idx)
 {
@@ -430,6 +459,10 @@ dpdk_hash_cuckoo_move_insert_mw(const struct dpdk_hash *h,
 			return -1;
 		}
 
+#ifdef ENABLE_BLOOM_FILTER
+        bucket_bloom_set(h, prev_bkt, prev_alt_bkt_idx);
+#endif // ENABLE_BLOOM_FILTER
+
 		/* Need to swap current/alt sig to allow later
 		 * Cuckoo insert to move elements back to its
 		 * primary bucket if available
@@ -441,6 +474,7 @@ dpdk_hash_cuckoo_move_insert_mw(const struct dpdk_hash *h,
 		// __atomic_store_n(&curr_bkt->key_idx[curr_slot],
 		// 	prev_bkt->key_idx[prev_slot],
 		// 	__ATOMIC_RELEASE);
+
 
 		curr_slot = prev_slot;
 		curr_node = prev_node;
@@ -576,7 +610,7 @@ __dpdk_hash_add_key_with_hash(const struct dpdk_hash *h, const void *key,
 	memcpy(new_k->key, key, h->key_len);
 
 	/* Find an empty slot and insert */
-	ret = dpdk_hash_cuckoo_insert_mw(h, prim_bkt, sec_bkt, key, data,
+	ret = dpdk_hash_cuckoo_insert_primary(h, prim_bkt, key, data,
 					short_sig, slot_id);
 	if (ret == 0)
 		return slot_id - 1;
@@ -676,7 +710,7 @@ __dpdk_hash_lookup_with_hash_l(const struct dpdk_hash *h, const void *key,
 				hash_sig_t sig, void **data)
 {
 	uint32_t prim_bucket_idx, sec_bucket_idx;
-	struct dpdk_hash_bucket *bkt;
+	struct dpdk_hash_bucket *prim_bkt, *sec_bkt;
 	int ret;
 	uint16_t short_sig;
 
@@ -684,19 +718,26 @@ __dpdk_hash_lookup_with_hash_l(const struct dpdk_hash *h, const void *key,
 	prim_bucket_idx = get_prim_bucket_index(h, sig);
 	sec_bucket_idx = get_alt_bucket_index(h, prim_bucket_idx, short_sig);
 
-	bkt = &h->buckets[prim_bucket_idx];
+	prim_bkt = &h->buckets[prim_bucket_idx];
 
 	/* Check if key is in primary location */
-	ret = search_one_bucket_l(h, key, short_sig, data, bkt);
+	ret = search_one_bucket_l(h, key, short_sig, data, prim_bkt);
 	if (ret != -1) {
 		return ret;
 	}
 	/* Calculate secondary hash */
-	bkt = &h->buckets[sec_bucket_idx];
+	sec_bkt = &h->buckets[sec_bucket_idx];
 
-	/* Check if key is in secondary location */
+#ifdef ENABLE_BLOOM_FILTER
+    /* Check bloom filter to see whether to search secondary bucket */
+    if (likely(!bucket_bloom_test(h, prim_bkt, sec_bucket_idx))) {
+        return -ENOENT;
+    }
+#endif // ENABLE_BLOOM_FILTER
+
+    /* Check if key is in secondary location */
     ret = search_one_bucket_l(h, key, short_sig,
-                data, bkt);
+                data, sec_bkt);
     if (ret != -1) {
         return ret;
     }
@@ -830,6 +871,9 @@ __dpdk_hash_del_key_with_hash(const struct dpdk_hash *h, const void *key,
 
     ret = search_and_remove(h, key, sec_bkt, short_sig, &pos);
     if (ret != -1) {
+#ifdef ENABLE_BLOOM_FILTER
+        bucket_bloom_delete(h, prim_bkt);
+#endif // ENABLE_BLOOM_FILTER
 	    return ret;
     }
 
