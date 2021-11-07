@@ -5,6 +5,8 @@
 extern "C" {
 #endif
 
+#include <stdint.h>
+
 #define ITERATIONS 50000000
 #define MAX_ENTRIES 1000000
 #define LOAD_FACTOR 0.7

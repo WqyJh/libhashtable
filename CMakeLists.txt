@@ -9,20 +9,24 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 add_definitions(-march=native)
 
+if (NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE "Release")
+    message(STATUS "No CMAKE_BUILD_TYPE selected, defaulting to ${CMAKE_BUILD_TYPE}")
+endif()
+set(CMAKE_C_FLAGS_DEBUG "$ENV{CFLAGS} -O0 -Wall -g -ggdb")
+set(CMAKE_C_FLAGS_RELEASE "$ENV{CFLAGS} -O3 -Wall")
+
 set(ENV{PKG_CONFIG_PATH} "/usr/local/lib/x86_64-linux-gnu/pkgconfig")
 
 find_package(PkgConfig)
 
-message(STATUS "--- PKG_CONFIG_FOUND: ${PKG_CONFIG_FOUND}")
-message(STATUS "--- PKG_CONFIG_VERSION_STRING: ${PKG_CONFIG_VERSION_STRING}")
+message(STATUS "PKG_CONFIG_FOUND: ${PKG_CONFIG_FOUND}")
+message(STATUS "PKG_CONFIG_VERSION_STRING: ${PKG_CONFIG_VERSION_STRING}")
 
 pkg_search_module(DPDK libdpdk)
 
 if (DPDK_FOUND) # DPDK >= 20.11
-    message(STATUS "DPDK_LIBRARIES: ${DPDK_LIBRARIES}")
-    message(STATUS "DPDK_STATIC_LIBRARIES: ${DPDK_STATIC_LIBRARIES}")
     message(STATUS "DPDK_INCLUDE_DIRS: ${DPDK_INCLUDE_DIRS}")
-    message(STATUS "DPDK_CFLAGS: ${DPDK_CFLAGS}")
     set(CFLAGS ${CFLAGS} ${DPDK_CFLAGS})
     # set(LIBRARIES ${LIBRARIES} ${DPDK_LIBRARIES})
 else()
@@ -45,13 +49,6 @@ if (BENCH_ALWAYS_INLINE)
     message(STATUS "BENCH_ALWAYS_INLINE enabled")
     add_definitions(-DBENCH_ALWAYS_INLINE)
 endif()
-
-if (NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE "Release")
-    message(STATUS "No CMAKE_BUILD_TYPE selected, defaulting to ${CMAKE_BUILD_TYPE}")
-endif()
-set(CMAKE_C_FLAGS_DEBUG "$ENV{CFLAGS} -O0 -Wall -g -ggdb")
-set(CMAKE_C_FLAGS_RELEASE "$ENV{CFLAGS} -O3 -Wall")
 
 set(PUBLIC_HEADERS
     hashtable/dpdk.h

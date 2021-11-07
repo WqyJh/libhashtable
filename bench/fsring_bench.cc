@@ -30,6 +30,35 @@ static void BM_fsring_enqueue(benchmark::State &state) {
     }
 
     state.SetItemsProcessed(items);
+    fsring_free(r);
+}
+
+static void BM_fsring_dequeue(benchmark::State &state) {
+    struct fsring *r = fsring_create(MAX_ENTRIES, rte_socket_id());
+
+    EXPECT_TRUE(r != NULL);
+    int n = MAX_ENTRIES * LOAD_FACTOR;
+
+    int items = 0;
+    while (state.KeepRunningBatch(n)) {
+        state.PauseTiming(); // Stop timers. They will not count until they are
+                             // resumed.
+        for (int i = 0; i < n; i++) {
+            EXPECT_EQ(0, fsring_enqueue(r, i));
+        }
+
+        items += n;
+        state.ResumeTiming(); // And resume timers. They are now counting again.
+
+        for (int i = 0; i < n; i++) {
+            uint32_t value;
+            EXPECT_EQ(0, fsring_dequeue(r, &value));
+        }
+    }
+
+    state.SetItemsProcessed(items);
+    fsring_free(r);
 }
 
 BENCHMARK(BM_fsring_enqueue);
+BENCHMARK(BM_fsring_dequeue);

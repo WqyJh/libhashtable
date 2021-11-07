@@ -48,7 +48,9 @@ static void BM_dpdk_hash_add(benchmark::State &state) {
         for (int i = 0; i < n; i++) {
             int ret = dpdk_hash_del_key(hash, &keys[i]);
             EXPECT_TRUE(ret >= 0);
+            EXPECT_EQ(n - i - 1, dpdk_hash_count(hash));
         }
+        EXPECT_EQ(0, dpdk_hash_count(hash));
         items += n;
         state.ResumeTiming(); // And resume timers. They are now counting again.
     }
@@ -97,6 +99,7 @@ static void BM_dpdk_hash_lookup(benchmark::State &state) {
         items += n;
     }
 
+    EXPECT_EQ(n, dpdk_hash_count(hash));
     state.SetItemsProcessed(items);
     dpdk_hash_free(hash);
     delete[] keys;
@@ -136,6 +139,7 @@ static void BM_dpdk_hash_del(benchmark::State &state) {
             EXPECT_EQ(
                 0, dpdk_hash_add_key_data(hash, &keys[i], (void *)(uint64_t)i));
         }
+        EXPECT_EQ(n, dpdk_hash_count(hash));
         items += n;
         state.ResumeTiming(); // And resume timers. They are now counting again.
 
