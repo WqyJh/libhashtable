@@ -21,6 +21,7 @@ static void BM_dpdk_hash_add(benchmark::State &state) {
         .hash_func = FLOW_HASH_FUNC,
         .hash_func_init_val = 0,
         .socket_id = (int)rte_socket_id(),
+        .tick_interval = 2,
         .extra_flag = 0,
     };
     struct dpdk_hash *hash = dpdk_hash_create(&hash_params);
@@ -71,6 +72,7 @@ static void BM_dpdk_hash_lookup(benchmark::State &state) {
         .hash_func = FLOW_HASH_FUNC,
         .hash_func_init_val = 0,
         .socket_id = (int)rte_socket_id(),
+        .tick_interval = 2,
         .extra_flag = 0,
     };
     struct dpdk_hash *hash = dpdk_hash_create(&hash_params);
@@ -116,6 +118,7 @@ static void BM_dpdk_hash_del(benchmark::State &state) {
         .hash_func = FLOW_HASH_FUNC,
         .hash_func_init_val = 0,
         .socket_id = (int)rte_socket_id(),
+        .tick_interval = 2,
         .extra_flag = 0,
     };
     struct dpdk_hash *hash = dpdk_hash_create(&hash_params);

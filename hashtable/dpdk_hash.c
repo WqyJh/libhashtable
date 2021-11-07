@@ -88,7 +88,6 @@ dpdk_hash_create(const struct dpdk_hash_parameters *params)
 	char ring_name[STACK_NAMESIZE];
 #undef STACK_NAMESIZE
 	unsigned num_key_slots;
-	uint32_t *tbl_chng_cnt = NULL;
 	uint32_t i;
 
 	dpdk_hash_function default_hash_func = (dpdk_hash_function)rte_jhash;
@@ -158,14 +157,6 @@ dpdk_hash_create(const struct dpdk_hash_parameters *params)
 		goto err_unlock;
 	}
 
-	tbl_chng_cnt = rte_zmalloc_socket(NULL, sizeof(uint32_t),
-			RTE_CACHE_LINE_SIZE, params->socket_id);
-
-	if (tbl_chng_cnt == NULL) {
-		RTE_LOG(ERR, HASH, "memory allocation failed\n");
-		goto err_unlock;
-	}
-
 /*
  * If x86 architecture is used, select appropriate compare function,
  * which may use x86 intrinsics, otherwise use memcmp
@@ -226,8 +217,6 @@ dpdk_hash_create(const struct dpdk_hash_parameters *params)
 		default_hash_func : params->hash_func;
 	h->key_store = k;
 	h->free_slots = r;
-	h->tbl_chng_cnt = tbl_chng_cnt;
-	*h->tbl_chng_cnt = 0;
 
 #if defined(RTE_ARCH_X86)
 	if (rte_cpu_get_flag_enabled(RTE_CPUFLAG_SSE2))
@@ -251,7 +240,6 @@ err:
 	rte_free(h);
 	rte_free(buckets);
 	rte_free(k);
-	rte_free(tbl_chng_cnt);
 	return NULL;
 }
 
@@ -264,7 +252,6 @@ dpdk_hash_free(struct dpdk_hash *h)
 	fsring_free(h->free_slots);
 	rte_free(h->key_store);
 	rte_free(h->buckets);
-	rte_free(h->tbl_chng_cnt);
 	rte_free(h);
 }
 
@@ -307,7 +294,6 @@ dpdk_hash_reset(struct dpdk_hash *h)
 
 	memset(h->buckets, 0, h->num_buckets * sizeof(struct dpdk_hash_bucket));
 	memset(h->key_store, 0, h->key_entry_size * (h->entries + 1));
-	*h->tbl_chng_cnt = 0;
 
 	/* reset the free ring */
     fsring_reset(h->free_slots);
@@ -376,26 +362,9 @@ dpdk_hash_cuckoo_insert_mw(const struct dpdk_hash *h,
 		struct dpdk_hash_bucket *prim_bkt,
 		struct dpdk_hash_bucket *sec_bkt,
 		const struct dpdk_hash_key *key, void *data,
-		uint16_t sig, uint32_t new_idx,
-		int32_t *ret_val)
+		uint16_t sig, uint32_t new_idx)
 {
 	unsigned int i;
-	int32_t ret;
-
-	/* Check if key was inserted after last check but before this
-	 * protected region in case of inserting duplicated keys.
-	 */
-	ret = search_and_update(h, data, key, prim_bkt, sig);
-	if (ret != -1) {
-		*ret_val = ret;
-		return 1;
-	}
-
-    ret = search_and_update(h, data, key, sec_bkt, sig);
-    if (ret != -1) {
-        *ret_val = ret;
-        return 1;
-    }
 
 	/* Insert new entry if there is room in the primary
 	 * bucket.
@@ -435,34 +404,12 @@ dpdk_hash_cuckoo_move_insert_mw(const struct dpdk_hash *h,
 			struct dpdk_hash_bucket *alt_bkt,
 			const struct dpdk_hash_key *key, void *data,
 			struct queue_node *leaf, uint32_t leaf_slot,
-			uint16_t sig, uint32_t new_idx,
-			int32_t *ret_val)
+			uint16_t sig, uint32_t new_idx)
 {
 	uint32_t prev_alt_bkt_idx;
 	struct queue_node *prev_node, *curr_node = leaf;
 	struct dpdk_hash_bucket *prev_bkt, *curr_bkt = leaf->bkt;
 	uint32_t prev_slot, curr_slot = leaf_slot;
-	int32_t ret;
-
-	/* In case empty slot was gone before entering protected region */
-	if (curr_bkt->key_idx[curr_slot] != EMPTY_SLOT) {
-		return -1;
-	}
-
-	/* Check if key was inserted after last check but before this
-	 * protected region.
-	 */
-	ret = search_and_update(h, data, key, bkt, sig);
-	if (ret != -1) {
-		*ret_val = ret;
-		return 1;
-	}
-
-    ret = search_and_update(h, data, key, alt_bkt, sig);
-    if (ret != -1) {
-        *ret_val = ret;
-        return 1;
-    }
 
 	while (likely(curr_node->prev != NULL)) {
 		prev_node = curr_node->prev;
@@ -521,7 +468,7 @@ dpdk_hash_cuckoo_make_space_mw(const struct dpdk_hash *h,
 			struct dpdk_hash_bucket *sec_bkt,
 			const struct dpdk_hash_key *key, void *data,
 			uint16_t sig, uint32_t bucket_idx,
-			uint32_t new_idx, int32_t *ret_val)
+			uint32_t new_idx)
 {
 	unsigned int i;
 	struct queue_node queue[DPDK_HASH_BFS_QUEUE_MAX_LEN];
@@ -547,7 +494,7 @@ dpdk_hash_cuckoo_make_space_mw(const struct dpdk_hash *h,
 				int32_t ret = dpdk_hash_cuckoo_move_insert_mw(h,
 						bkt, sec_bkt, key, data,
 						tail, i, sig,
-						new_idx, ret_val);
+						new_idx);
 				if (likely(ret != -1))
 					return ret;
 			}
@@ -589,7 +536,6 @@ __dpdk_hash_add_key_with_hash(const struct dpdk_hash *h, const void *key,
 	struct dpdk_hash_key *new_k, *keys = h->key_store;
 	uint32_t slot_id;
 	int ret;
-	int32_t ret_val;
 
 	short_sig = get_short_sig(sig);
 	prim_bucket_idx = get_prim_bucket_index(h, sig);
@@ -612,7 +558,6 @@ __dpdk_hash_add_key_with_hash(const struct dpdk_hash *h, const void *key,
     }
 
 	/* Did not find a match, so get a new slot for storing the new key */
-
 	slot_id = alloc_slot(h);
 	if (slot_id == EMPTY_SLOT) {
 		return -ENOSPC;
@@ -632,34 +577,22 @@ __dpdk_hash_add_key_with_hash(const struct dpdk_hash *h, const void *key,
 
 	/* Find an empty slot and insert */
 	ret = dpdk_hash_cuckoo_insert_mw(h, prim_bkt, sec_bkt, key, data,
-					short_sig, slot_id, &ret_val);
+					short_sig, slot_id);
 	if (ret == 0)
 		return slot_id - 1;
-	else if (ret == 1) {
-		enqueue_slot_back(h, slot_id);
-		return ret_val;
-	}
 
 	/* Primary bucket full, need to make space for new entry */
 	ret = dpdk_hash_cuckoo_make_space_mw(h, prim_bkt, sec_bkt, key, data,
-				short_sig, prim_bucket_idx, slot_id, &ret_val);
+				short_sig, prim_bucket_idx, slot_id);
 	if (ret == 0)
 		return slot_id - 1;
-	else if (ret == 1) {
-		enqueue_slot_back(h, slot_id);
-		return ret_val;
-	}
 
 	/* Also search secondary bucket to get better occupancy */
 	ret = dpdk_hash_cuckoo_make_space_mw(h, sec_bkt, prim_bkt, key, data,
-				short_sig, sec_bucket_idx, slot_id, &ret_val);
+				short_sig, sec_bucket_idx, slot_id);
 
 	if (ret == 0)
 		return slot_id - 1;
-	else if (ret == 1) {
-		enqueue_slot_back(h, slot_id);
-		return ret_val;
-	}
 
     /* if ext table not enabled, we failed the insertion */
     enqueue_slot_back(h, slot_id);

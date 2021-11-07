@@ -12,6 +12,7 @@
 #define _DPDK_CUCKOO_HASH_H_
 
 #include <rte_vect.h>
+#include <stdint.h>
 
 /* Functions to compare multiple of 16 byte keys (up to 128 bytes) */
 static int
@@ -209,6 +210,12 @@ enum dpdk_hash_sig_compare_function {
 struct dpdk_hash_bucket {
 	uint16_t sig_current[DPDK_HASH_BUCKET_ENTRIES];
 
+	uint8_t expire_time[DPDK_HASH_BUCKET_ENTRIES];
+
+    uint32_t bloom_filter;
+
+    uint32_t moved_counter;
+
 	uint32_t key_idx[DPDK_HASH_BUCKET_ENTRIES];
 } __rte_cache_aligned;
 
@@ -226,9 +233,10 @@ struct dpdk_hash {
 	/* Fields used in lookup */
 
 	uint32_t key_len __rte_cache_aligned;
-	/**< Length of hash key. */
-	uint8_t writer_takes_lock;
-	/**< Indicates if the writer threads need to take lock */
+    uint8_t current_tick;
+	/**< Current tick value. */
+    uint8_t tick_interval;
+	/**< Interval of every tick. */
 	dpdk_hash_function hash_func;    /**< Function used to calculate hash. */
 	uint32_t hash_func_init_val;    /**< Init value used by hash_func. */
 	dpdk_hash_cmp_eq_t dpdk_hash_custom_cmp_eq;
@@ -246,8 +254,6 @@ struct dpdk_hash {
 	/**< Table with buckets storing all the	hash values and key indexes
 	 * to the key table.
 	 */
-	uint32_t *tbl_chng_cnt;
-	/**< Indicates if the hash table changed from last read. */
 } __rte_cache_aligned;
 
 struct queue_node {

@@ -64,6 +64,7 @@ struct dpdk_hash_parameters {
 	dpdk_hash_function hash_func;	/**< Primary Hash function used to calculate hash. */
 	uint32_t hash_func_init_val;	/**< Init value used by hash_func. */
 	int socket_id;			/**< NUMA Socket ID for memory. */
+    uint8_t tick_interval;
 	uint8_t extra_flag;		/**< Indicate if additional parameters are present. */
 };
 
