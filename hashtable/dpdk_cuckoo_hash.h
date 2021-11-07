@@ -212,8 +212,6 @@ struct dpdk_hash_bucket {
 	uint32_t key_idx[DPDK_HASH_BUCKET_ENTRIES];
 
 	uint8_t flag[DPDK_HASH_BUCKET_ENTRIES];
-
-	void *next;
 } __rte_cache_aligned;
 
 #include "fsring.h"

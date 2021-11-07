@@ -31,19 +31,6 @@
 #define DPDK_HASH_EXTRA_FLAGS_MASK ( \
 				   DPDK_HASH_EXTRA_FLAGS_EXT_TABLE)
 
-#define FOR_EACH_BUCKET(CURRENT_BKT, START_BUCKET)                            \
-	for (CURRENT_BKT = START_BUCKET;                                      \
-		CURRENT_BKT != NULL;                                          \
-		CURRENT_BKT = CURRENT_BKT->next)
-
-static inline struct dpdk_hash_bucket *
-dpdk_hash_get_last_bkt(struct dpdk_hash_bucket *lst_bkt)
-{
-	while (lst_bkt->next != NULL)
-		lst_bkt = lst_bkt->next;
-	return lst_bkt;
-}
-
 void dpdk_hash_set_cmp_func(struct dpdk_hash *h, dpdk_hash_cmp_eq_t func)
 {
 	h->cmp_jump_table_idx = KEY_CUSTOM;
@@ -393,7 +380,6 @@ dpdk_hash_cuckoo_insert_mw(const struct dpdk_hash *h,
 		int32_t *ret_val)
 {
 	unsigned int i;
-	struct dpdk_hash_bucket *cur_bkt;
 	int32_t ret;
 
 	/* Check if key was inserted after last check but before this
@@ -405,13 +391,11 @@ dpdk_hash_cuckoo_insert_mw(const struct dpdk_hash *h,
 		return 1;
 	}
 
-	FOR_EACH_BUCKET(cur_bkt, sec_bkt) {
-		ret = search_and_update(h, data, key, cur_bkt, sig);
-		if (ret != -1) {
-			*ret_val = ret;
-			return 1;
-		}
-	}
+    ret = search_and_update(h, data, key, sec_bkt, sig);
+    if (ret != -1) {
+        *ret_val = ret;
+        return 1;
+    }
 
 	/* Insert new entry if there is room in the primary
 	 * bucket.
@@ -455,7 +439,6 @@ dpdk_hash_cuckoo_move_insert_mw(const struct dpdk_hash *h,
 			int32_t *ret_val)
 {
 	uint32_t prev_alt_bkt_idx;
-	struct dpdk_hash_bucket *cur_bkt;
 	struct queue_node *prev_node, *curr_node = leaf;
 	struct dpdk_hash_bucket *prev_bkt, *curr_bkt = leaf->bkt;
 	uint32_t prev_slot, curr_slot = leaf_slot;
@@ -475,13 +458,11 @@ dpdk_hash_cuckoo_move_insert_mw(const struct dpdk_hash *h,
 		return 1;
 	}
 
-	FOR_EACH_BUCKET(cur_bkt, alt_bkt) {
-		ret = search_and_update(h, data, key, cur_bkt, sig);
-		if (ret != -1) {
-			*ret_val = ret;
-			return 1;
-		}
-	}
+    ret = search_and_update(h, data, key, alt_bkt, sig);
+    if (ret != -1) {
+        *ret_val = ret;
+        return 1;
+    }
 
 	while (likely(curr_node->prev != NULL)) {
 		prev_node = curr_node->prev;
@@ -604,11 +585,10 @@ __dpdk_hash_add_key_with_hash(const struct dpdk_hash *h, const void *key,
 {
 	uint16_t short_sig;
 	uint32_t prim_bucket_idx, sec_bucket_idx;
-	struct dpdk_hash_bucket *prim_bkt, *sec_bkt, *cur_bkt;
+	struct dpdk_hash_bucket *prim_bkt, *sec_bkt;
 	struct dpdk_hash_key *new_k, *keys = h->key_store;
 	uint32_t slot_id;
 	int ret;
-	unsigned int i;
 	int32_t ret_val;
 
 	short_sig = get_short_sig(sig);
@@ -626,12 +606,10 @@ __dpdk_hash_add_key_with_hash(const struct dpdk_hash *h, const void *key,
 	}
 
 	/* Check if key is already inserted in secondary location */
-	FOR_EACH_BUCKET(cur_bkt, sec_bkt) {
-		ret = search_and_update(h, data, key, cur_bkt, short_sig);
-		if (ret != -1) {
-			return ret;
-		}
-	}
+    ret = search_and_update(h, data, key, sec_bkt, short_sig);
+    if (ret != -1) {
+        return ret;
+    }
 
 	/* Did not find a match, so get a new slot for storing the new key */
 
@@ -765,7 +743,7 @@ __dpdk_hash_lookup_with_hash_l(const struct dpdk_hash *h, const void *key,
 				hash_sig_t sig, void **data)
 {
 	uint32_t prim_bucket_idx, sec_bucket_idx;
-	struct dpdk_hash_bucket *bkt, *cur_bkt;
+	struct dpdk_hash_bucket *bkt;
 	int ret;
 	uint16_t short_sig;
 
@@ -784,13 +762,11 @@ __dpdk_hash_lookup_with_hash_l(const struct dpdk_hash *h, const void *key,
 	bkt = &h->buckets[sec_bucket_idx];
 
 	/* Check if key is in secondary location */
-	FOR_EACH_BUCKET(cur_bkt, bkt) {
-		ret = search_one_bucket_l(h, key, short_sig,
-					data, cur_bkt);
-		if (ret != -1) {
-			return ret;
-		}
-	}
+    ret = search_one_bucket_l(h, key, short_sig,
+                data, bkt);
+    if (ret != -1) {
+        return ret;
+    }
 
 	return -ENOENT;
 }
@@ -852,38 +828,6 @@ remove_entry(const struct dpdk_hash *h, struct dpdk_hash_bucket *bkt,
 	}
 }
 
-/* Compact the linked list by moving key from last entry in linked list to the
- * empty slot.
- */
-static inline void
-__dpdk_hash_compact_ll(const struct dpdk_hash *h,
-			struct dpdk_hash_bucket *cur_bkt, int pos) {
-	int i;
-	struct dpdk_hash_bucket *last_bkt;
-
-	if (!cur_bkt->next)
-		return;
-
-	last_bkt = dpdk_hash_get_last_bkt(cur_bkt);
-
-	for (i = DPDK_HASH_BUCKET_ENTRIES - 1; i >= 0; i--) {
-		if (last_bkt->key_idx[i] != EMPTY_SLOT) {
-			cur_bkt->sig_current[pos] = last_bkt->sig_current[i];
-            cur_bkt->key_idx[pos] = last_bkt->key_idx[i];
-			// __atomic_store_n(&cur_bkt->key_idx[pos],
-			// 		 last_bkt->key_idx[i],
-			// 		 __ATOMIC_RELEASE);
-
-			last_bkt->sig_current[i] = NULL_SIGNATURE;
-            last_bkt->key_idx[i] = EMPTY_SLOT;
-			// __atomic_store_n(&last_bkt->key_idx[i],
-			// 		 EMPTY_SLOT,
-			// 		 __ATOMIC_RELEASE);
-			return;
-		}
-	}
-}
-
 /* Search one bucket and remove the matched key.
  * Writer is expected to hold the lock while calling this
  * function.
@@ -932,10 +876,9 @@ __dpdk_hash_del_key_with_hash(const struct dpdk_hash *h, const void *key,
 						hash_sig_t sig)
 {
 	uint32_t prim_bucket_idx, sec_bucket_idx;
-	struct dpdk_hash_bucket *prim_bkt, *sec_bkt, *prev_bkt, *last_bkt;
-	struct dpdk_hash_bucket *cur_bkt;
+	struct dpdk_hash_bucket *prim_bkt, *sec_bkt;
 	int pos;
-	int32_t ret, i;
+	int32_t ret;
 	uint16_t short_sig;
 
 	short_sig = get_short_sig(sig);
@@ -946,48 +889,18 @@ __dpdk_hash_del_key_with_hash(const struct dpdk_hash *h, const void *key,
 	/* look for key in primary bucket */
 	ret = search_and_remove(h, key, prim_bkt, short_sig, &pos);
 	if (ret != -1) {
-		__dpdk_hash_compact_ll(h, prim_bkt, pos);
-		last_bkt = prim_bkt->next;
-		prev_bkt = prim_bkt;
-		goto return_bkt;
+	    return ret;
 	}
 
 	/* Calculate secondary hash */
 	sec_bkt = &h->buckets[sec_bucket_idx];
 
-	FOR_EACH_BUCKET(cur_bkt, sec_bkt) {
-		ret = search_and_remove(h, key, cur_bkt, short_sig, &pos);
-		if (ret != -1) {
-			__dpdk_hash_compact_ll(h, cur_bkt, pos);
-			last_bkt = sec_bkt->next;
-			prev_bkt = sec_bkt;
-			goto return_bkt;
-		}
-	}
+    ret = search_and_remove(h, key, sec_bkt, short_sig, &pos);
+    if (ret != -1) {
+	    return ret;
+    }
 
 	return -ENOENT;
-
-/* Search last bucket to see if empty to be recycled */
-return_bkt:
-	if (!last_bkt)
-		goto return_key;
-
-	while (last_bkt->next) {
-		prev_bkt = last_bkt;
-		last_bkt = last_bkt->next;
-	}
-
-	for (i = 0; i < DPDK_HASH_BUCKET_ENTRIES; i++) {
-		if (last_bkt->key_idx[i] != EMPTY_SLOT)
-			break;
-	}
-	/* found empty bucket and recycle */
-	if (i == DPDK_HASH_BUCKET_ENTRIES) {
-		prev_bkt->next = NULL;
-	}
-
-return_key:
-	return ret;
 }
 
 int32_t
