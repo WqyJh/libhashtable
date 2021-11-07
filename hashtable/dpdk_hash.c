@@ -683,47 +683,9 @@ __dpdk_hash_add_key_with_hash(const struct dpdk_hash *h, const void *key,
 		return ret_val;
 	}
 
-	/* We check for duplicates again since could be inserted before the lock */
-	ret = search_and_update(h, data, key, prim_bkt, short_sig);
-	if (ret != -1) {
-		enqueue_slot_back(h, slot_id);
-		goto failure;
-	}
-
-	FOR_EACH_BUCKET(cur_bkt, sec_bkt) {
-		ret = search_and_update(h, data, key, cur_bkt, short_sig);
-		if (ret != -1) {
-			enqueue_slot_back(h, slot_id);
-			goto failure;
-		}
-	}
-
-	/* Search sec and ext buckets to find an empty entry to insert. */
-	FOR_EACH_BUCKET(cur_bkt, sec_bkt) {
-		for (i = 0; i < DPDK_HASH_BUCKET_ENTRIES; i++) {
-			/* Check if slot is available */
-			if (likely(cur_bkt->key_idx[i] == EMPTY_SLOT)) {
-				cur_bkt->sig_current[i] = short_sig;
-				/* Store to signature and key should not
-				 * leak after the store to key_idx. i.e.
-				 * key_idx is the guard variable for signature
-				 * and key.
-				 */
-                 cur_bkt->key_idx[i] = slot_id;
-				// __atomic_store_n(&cur_bkt->key_idx[i],
-				// 		 slot_id,
-				// 		 __ATOMIC_RELEASE);
-				return slot_id - 1;
-			}
-		}
-	}
-
-    ret = -ENOSPC;
-	goto failure;
-
-failure:
-	return ret;
-
+    /* if ext table not enabled, we failed the insertion */
+    enqueue_slot_back(h, slot_id);
+    return ret;
 }
 
 int32_t
