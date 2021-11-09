@@ -86,7 +86,6 @@ static void BM_rte_hash_lookup(benchmark::State &state) {
     }
 
     int items = 0;
-    int idx = 0;
     while (state.KeepRunningBatch(n)) {
         for (int i = 0; i < n; i++) {
             uintptr_t data = 0;
