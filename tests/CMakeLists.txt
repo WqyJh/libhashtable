@@ -2,7 +2,11 @@
 # apt install libgtest-dev
 find_package(GTest REQUIRED)
 
-set(CMAKE_BUILD_TYPE "Debug")
+if (NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE "Release")
+    message(STATUS "No CMAKE_BUILD_TYPE selected, defaulting to ${CMAKE_BUILD_TYPE}")
+endif()
+message(STATUS "CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
 
 include_directories(${GTEST_INCLUDE_DIRS})
 

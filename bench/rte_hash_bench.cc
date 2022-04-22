@@ -148,6 +148,65 @@ static void BM_rte_hash_del(benchmark::State &state) {
     delete[] keys;
 }
 
+void BM_rte_hash_iterate(benchmark::State &state) {
+    char hash_name[HASH_NAME_LEN];
+    sprintf(hash_name, "hash_lookup");
+
+    struct rte_hash_parameters hash_params = {
+        .name = hash_name,
+        .entries = MAX_ENTRIES,
+        .reserved = 0,
+        .key_len = sizeof(struct flow_key),
+        .hash_func = FLOW_HASH_FUNC,
+        .hash_func_init_val = 0,
+        .socket_id = (int)rte_socket_id(),
+        .extra_flag = 0,
+    };
+    struct rte_hash *hash = rte_hash_create(&hash_params);
+    int n = MAX_ENTRIES * LOAD_FACTOR;
+
+    struct flow_key *keys = new struct flow_key[n];
+    for (int i = 0; i < n; i++) {
+        // Don't use rand() to generate keys.
+        // Make the keys identical when re-enter this func.
+        uint8_t *a = (uint8_t *)&keys[i];
+        *(uint64_t *)a = (uint64_t)i;
+        *(uint64_t *)(a + 8) = !(uint64_t)i;
+    }
+
+    for (int i = 0; i < n; i++) {
+        EXPECT_EQ(0, rte_hash_add_key_data(hash, &keys[i], (void *)(uintptr_t)i));
+    }
+
+    int items = 0;
+    uint32_t next = 0;
+    while (state.KeepRunning()) {
+        void *data;
+        void *key;
+        int ret = rte_hash_iterate(hash, (const void**)&key, &data, &next);
+        if (ret < 0) {
+            if (ret == -ENOENT) {
+                next = 0;
+                continue;
+            } else {
+                printf("ret: %d\n", ret);
+            }
+        }
+
+        state.PauseTiming(); // Stop timers. They will not count until they are
+                            // resumed.
+        items++;
+        EXPECT_TRUE(ret >= 0);
+        EXPECT_TRUE(memcmp(key, (void*)&keys[(uint64_t)data], sizeof(struct flow_key)) == 0);
+        state.ResumeTiming(); // And resume timers. They are now counting again.
+    }
+
+    EXPECT_EQ(n, rte_hash_count(hash));
+    state.SetItemsProcessed(items);
+    rte_hash_free(hash);
+    delete[] keys;
+}
+
 BENCHMARK(BM_rte_hash_add);
 BENCHMARK(BM_rte_hash_del);
 BENCHMARK(BM_rte_hash_lookup);

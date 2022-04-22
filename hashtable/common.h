@@ -1,6 +1,8 @@
 #ifndef FLOW_DIRECTOR_COMMON_H
 #define FLOW_DIRECTOR_COMMON_H
 
+#include <rte_eal.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif

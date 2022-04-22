@@ -9,7 +9,7 @@
 #include "libcuckoo.h"
 
 typedef struct {
-    char blob[16];
+    char blob[KEY_LEN];
 } key_blob;
 
 typedef struct {
@@ -32,11 +32,26 @@ template <> struct equal_to<key_blob> {
 
 using map_type = libcuckoo::cuckoohash_map<key_blob, value_blob, std::hash<key_blob>,
                               std::equal_to<key_blob>>;
+
+struct iterator_holder {
+    int idx;
+    map_type::locked_table& table;
+    map_type::locked_table::const_iterator it;
+    iterator_holder(int idx, map_type::locked_table&& table): idx(idx), table(table) {
+        it = table.begin();
+    };
+};
 class cuckoo_hash {
   public:
-    cuckoo_hash(size_t n) : tbl(n) {}
+    cuckoo_hash(size_t n) : tbl(n), holder(nullptr) {}
+    ~cuckoo_hash() {
+        if (holder != nullptr) {
+            delete holder;
+        }
+    }
 
     map_type tbl;
+    iterator_holder *holder;
 };
 
 #ifdef __cplusplus
@@ -67,6 +82,28 @@ bool cuckoo_hash_find(struct cuckoo_hash *h, const void *key, void **data) {
         return true;
     }
     return false;
+}
+
+int32_t cuckoo_hash_iterate(struct cuckoo_hash *h, const void **key, void **data, uint32_t *next) {
+    if (h->holder == nullptr) {
+        h->holder = new iterator_holder(0, h->tbl.lock_table());
+    }
+    auto it = h->holder->it;
+    if (it == h->holder->table.end()) {
+        delete h->holder;
+        h->holder = nullptr;
+        return -ENOENT;
+    }
+    // auto lt = h->tbl.lock_table();
+    // auto it = std::next(lt.begin(), *next);
+    // if (it == lt.end()) {
+    //     return -ENOENT;
+    // }
+    *key = &it->first;
+    *(uint64_t*)data = *(uint64_t*)it->second.blob;
+    h->holder->it++;
+    *next = ++h->holder->idx;
+    return 0;
 }
 
 #ifdef __cplusplus

@@ -1307,7 +1307,7 @@ dpdk_hash_iterate(const struct dpdk_hash *h, const void **key, void **data, uint
 	idx = *next % DPDK_HASH_BUCKET_ENTRIES;
 
 	/* If current position is empty, go to the next one */
-    while ((position = h->buckets[bucket_idx].key_idx[idx])) {
+    while ((position = h->buckets[bucket_idx].key_idx[idx]) == EMPTY_SLOT) {
 	// while ((position = __atomic_load_n(&h->buckets[bucket_idx].key_idx[idx],
 	// 				__ATOMIC_ACQUIRE)) == EMPTY_SLOT) {
 		(*next)++;

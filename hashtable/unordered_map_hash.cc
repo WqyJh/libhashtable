@@ -1,5 +1,6 @@
 
 
+#include <asm-generic/errno-base.h>
 #include <cstdint>
 #include <string.h>
 #include <utility>
@@ -9,7 +10,7 @@
 #include "common.h"
 #include "unordered_map.h"
 
-typedef struct { char blob[16]; } key_blob;
+typedef struct { char blob[KEY_LEN]; } key_blob;
 
 typedef uint64_t value_blob;
 namespace std {
@@ -26,12 +27,22 @@ template <> struct equal_to<key_blob> {
 };
 }
 
+
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+struct iterator_holder {
+    using iterator_type = std::unordered_map<key_blob, value_blob>::const_iterator;
+    iterator_type it;
+    int idx;
+    iterator_holder(iterator_type it, int idx): it(it), idx(idx) {};
+};
+
 struct unordered_map_hash {
     std::unordered_map<key_blob, value_blob> tbl;
+    iterator_holder *holder;
 };
 
 struct unordered_map_hash *unordered_map_hash_create(int capacity) {
@@ -39,6 +50,7 @@ struct unordered_map_hash *unordered_map_hash_create(int capacity) {
     if (h == nullptr) {
         return NULL;
     }
+    h->holder = nullptr;
     h->tbl.reserve(capacity);
     return h;
 }
@@ -63,6 +75,35 @@ bool unordered_map_hash_find(struct unordered_map_hash *h, const void *key, void
     if (ret == h->tbl.end()) return false;
     *(uint64_t*)data = ret->second;
     return true;
+}
+
+int32_t unordered_map_hash_iterate(struct unordered_map_hash *h, const void **key, void **data, uint32_t *next) {
+    // uint32_t idx = 0;
+    // for (int i = 0; i < h->tbl.bucket_count(); i++) {
+    //     if (idx + h->tbl.bucket_size(i) > *next) {
+    //         auto it = std::next(h->tbl.begin(i), (*next - idx));
+    //         *key = &it->first;
+    //         *data = (void*)it->second;
+    //         (*next)++;
+    //         return 0;
+    //     }
+    //     idx += h->tbl.bucket_size(i);
+    // }
+    // return -ENOENT;
+    if (h->holder == nullptr) {
+        h->holder = new iterator_holder(h->tbl.begin(), 0);
+    }
+    auto it = h->holder->it;
+    if (it == h->tbl.end()) {
+        delete h->holder;
+        h->holder = nullptr;
+        return -ENOENT;
+    }
+    *key = &it->first;
+    *data = (void*)it->second;
+    h->holder->it++;
+    *next = ++h->holder->idx;
+    return 0;
 }
 
 #ifdef __cplusplus

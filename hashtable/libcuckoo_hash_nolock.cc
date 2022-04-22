@@ -9,7 +9,7 @@
 #include "libcuckoo.h"
 
 typedef struct {
-    char blob[16];
+    char blob[KEY_LEN];
 } key_blob;
 
 typedef struct {
@@ -34,11 +34,27 @@ template <> struct equal_to<key_blob> {
 };
 } // namespace std
 
+using map_type = libcuckoo::cuckoohash_map<key_blob, value_blob, std::hash<key_blob>,
+                              std::equal_to<key_blob>>;
+struct iterator_holder {
+    map_type::locked_table::const_iterator it;
+    int idx;
+    iterator_holder(map_type::locked_table::const_iterator it, int idx): it(it), idx(idx) {};
+};
+
 class cuckoo_hash_nolock {
   public:
     cuckoo_hash_nolock(size_t n) {
         map_ = map_type(n);
         holder_.push_back(map_.lock_table());
+        iterholder = nullptr;
+    }
+
+    ~cuckoo_hash_nolock() {
+        if (iterholder != nullptr) {
+            delete iterholder;
+            iterholder = nullptr;
+        }
     }
 
     template <typename K, typename V> bool find(const K &k, V &v) const {
@@ -60,10 +76,14 @@ class cuckoo_hash_nolock {
         return ret > 0;
     }
 
+    map_type::locked_table& locked_table() {
+        return holder_[0];
+    }
+
+    iterator_holder *iterholder;
+
   private:
-    using map_type =
-        libcuckoo::cuckoohash_map<key_blob, value_blob, std::hash<key_blob>,
-                                  std::equal_to<key_blob>>;
+
     map_type map_;
     std::vector<map_type::locked_table> holder_;
 };
@@ -98,6 +118,27 @@ bool cuckoo_hash_nolock_find(struct cuckoo_hash_nolock *h, const void *key,
         return true;
     }
     return false;
+}
+
+int32_t cuckoo_hash_nolock_iterate(struct cuckoo_hash_nolock *h, const void **key, void **data, uint32_t *next) {
+    if (h->iterholder == nullptr) {
+        h->iterholder = new iterator_holder(h->locked_table().begin(), 0);
+    }
+    auto it = h->iterholder->it;
+    if (it == h->locked_table().end()) {
+        delete h->iterholder;
+        h->iterholder = nullptr;
+        return -ENOENT;
+    }
+    // auto it = std::next(h->locked_table().begin(), *next);
+    // if (it == h->locked_table().end()) {
+    //     return -ENOENT;
+    // }
+    *key = &it->first;
+    *(uint64_t*)data = *(uint64_t*)it->second.blob;
+    h->iterholder->it++;
+    *next = ++h->iterholder->idx;
+    return 0;
 }
 
 #ifdef __cplusplus
