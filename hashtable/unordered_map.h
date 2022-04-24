@@ -23,6 +23,8 @@ bool unordered_map_hash_find(struct unordered_map_hash *h, const void *key, void
 
 int32_t unordered_map_hash_iterate(struct unordered_map_hash *h, const void **key, void **data, uint32_t *next);
 
+int32_t unordered_map_hash_count(const struct unordered_map_hash *h);
+
 #ifdef __cplusplus
 }
 #endif

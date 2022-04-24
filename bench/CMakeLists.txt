@@ -14,10 +14,10 @@ message(STATUS "CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
 
 add_executable(bench_main
     main.cc
-    libcuckoo_hash_nolock_bench.cc
     rte_hash_bench.cc
     dpdk_hash_bench.cc
     libcuckoo_hash_bench.cc
+    libcuckoo_hash_nolock_bench.cc
     unordered_map_bench.cc
     hash_iterate.cc
     fsring_bench.cc

@@ -27,6 +27,7 @@ static void BM_unordered_map_add(benchmark::State &state) {
 
         state.PauseTiming(); // Stop timers. They will not count until they are
                              // resumed.
+        EXPECT_EQ(n, unordered_map_hash_count(tbl));
         for (int i = 0; i < n; i++) {
             EXPECT_TRUE(unordered_map_hash_erase(tbl, &keys[i]));
         }
@@ -64,6 +65,7 @@ static void BM_unordered_map_lookup(benchmark::State &state) {
     }
 
     state.SetItemsProcessed(items);
+    EXPECT_EQ(n, unordered_map_hash_count(tbl));
     unordered_map_hash_free(tbl);
     delete[] keys;
 }
@@ -97,6 +99,7 @@ static void BM_unordered_map_del(benchmark::State &state) {
     }
 
     state.SetItemsProcessed(items);
+    EXPECT_EQ(0, unordered_map_hash_count(tbl));
     unordered_map_hash_free(tbl);
     delete[] keys;
 }
@@ -135,6 +138,7 @@ void BM_unordered_map_iterate(benchmark::State &state) {
     }
 
     state.SetItemsProcessed(items);
+    EXPECT_EQ(n, unordered_map_hash_count(tbl));
     unordered_map_hash_free(tbl);
     delete[] keys;
 }

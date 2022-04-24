@@ -106,6 +106,13 @@ int32_t unordered_map_hash_iterate(struct unordered_map_hash *h, const void **ke
     return 0;
 }
 
+int32_t unordered_map_hash_count(const struct unordered_map_hash *h)
+{
+	if (h == NULL)
+		return -EINVAL;
+    return h->tbl.size();
+}
+
 #ifdef __cplusplus
 }
 #endif
